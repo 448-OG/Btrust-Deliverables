@@ -1,7 +1,10 @@
 use std::str::FromStr;
 
 use bdk::{
-    bitcoin::{secp256k1::SecretKey, Address, Network, PrivateKey},
+    bitcoin::{
+        secp256k1::{rand::rngs::OsRng, Secp256k1, SecretKey},
+        Address, Network, PrivateKey, PublicKey,
+    },
     blockchain::{Blockchain, ElectrumBlockchain},
     database::MemoryDatabase,
     electrum_client::Client,
@@ -14,6 +17,8 @@ mod load_data;
 pub use load_data::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dbg!(random_wallet());
+
     let wallet_loader = WalletLoader::load("../data.toml")?;
     dbg!(&wallet_loader);
 
@@ -61,4 +66,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     dbg!(&txid);
 
     Ok(())
+}
+
+pub fn random_wallet() -> (SecretKey, PublicKey, String) {
+    let secp = Secp256k1::new();
+    let (secret_key, public_key) = secp.generate_keypair(&mut OsRng);
+
+    let btc_public_key = PublicKey::new(public_key);
+
+    let network = Network::Testnet;
+    let address = Address::p2pkh(&btc_public_key, network);
+
+    (secret_key, btc_public_key, address.to_string())
 }
