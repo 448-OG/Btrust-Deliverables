@@ -9,3 +9,4 @@ edition = "2021"
 rand_chacha.workspace = true
 rand_core.workspace = true
 sha2.workspace = true
+pbkdf2.workspace = true

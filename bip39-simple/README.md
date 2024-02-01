@@ -128,11 +128,16 @@ pub fn new(path_to_wordlist: impl AsRef<Path>) -> Self {
     }
 ```
 
-Next, the `insecure_mnemonic` method
 ```rust
 // This takes a generic constant `N` which defines the number of random bytes to generate
 pub fn insecure_mnemonic<const N: usize>(&mut self) -> io::Result<Vec<String>> {
     // This calls the `mnemonic()` method since with no passphrase passed to the KDF
+    self.mnemonic::<N>()
+}
+```
+
+```rust
+pub fn secure_mnemonic<const N: usize>(&mut self) -> io::Result<Vec<String>> {
     self.mnemonic::<N>()
 }
 ```
