@@ -72,7 +72,7 @@ impl Bip39Generator {
             String::from(SALT_PREFIX)
         };
 
-        let mut wallet_seed = [0u8; 512];
+        let mut wallet_seed = [0u8; 64];
         pbkdf2_hmac::<Sha512>(
             mnemonic.as_bytes(),
             salt.as_bytes(),
