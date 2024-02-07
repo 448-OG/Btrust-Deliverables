@@ -1,11 +1,12 @@
 use bitcoin::{
     ecdsa::Signature,
-    hashes::Hash,
+    hashes::{sha256, Hash},
     locktime::absolute,
+    opcodes,
     secp256k1::{rand, All, Message, Secp256k1, SecretKey},
     sighash::{EcdsaSighashType, SighashCache},
-    Address, Amount, Network, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
-    Txid, WPubkeyHash, Witness,
+    Address, Amount, Network, OutPoint, PublicKey, Script, ScriptBuf, Sequence, Transaction, TxIn,
+    TxOut, Txid, WPubkeyHash, Witness,
 };
 
 fn main() {
@@ -13,8 +14,6 @@ fn main() {
     let tx_out = tx_exec.build();
     let tx_spend = tx_exec.spend(&tx_out);
 
-    dbg!(tx_exec.receiver_address());
-    dbg!(tx_exec.sender_address());
     dbg!(&tx_out);
     dbg!(&tx_spend);
 }
@@ -28,7 +27,6 @@ pub struct TxExec {
     wpkh: WPubkeyHash,
     receiver_secp: Secp256k1<All>,
     receiver_secret_key: SecretKey,
-    receiver_public_key: PublicKey,
 }
 
 impl TxExec {
@@ -40,8 +38,6 @@ impl TxExec {
 
         let receiver_secp = Secp256k1::new();
         let receiver_secret_key = SecretKey::new(&mut rand::thread_rng());
-        let receiver_public_key =
-            bitcoin::PublicKey::new(receiver_secret_key.public_key(&receiver_secp));
 
         Self {
             network: Network::Regtest,
@@ -52,12 +48,25 @@ impl TxExec {
             wpkh,
             receiver_secp,
             receiver_secret_key,
-            receiver_public_key,
         }
     }
 
     pub fn receiver_address(&self) -> Address {
-        Address::p2pkh(&self.receiver_public_key, self.network)
+        let preimage_bytes = b"Btrust Builders";
+        let locking_hash = sha256::Hash::hash(preimage_bytes);
+
+        let redeem_script = bitcoin::script::Builder::new()
+            .push_opcode(opcodes::all::OP_SHA256)
+            .push_slice(&locking_hash.as_byte_array())
+            .push_opcode(opcodes::all::OP_EQUAL)
+            .into_script();
+
+        println!(
+            "Redeem script in hex format: {:?}",
+            redeem_script.to_string()
+        );
+
+        Address::p2sh(&redeem_script, self.network).unwrap()
     }
 
     pub fn sender_address(&self) -> Address {
