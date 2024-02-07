@@ -5,8 +5,8 @@ use bitcoin::{
     opcodes,
     secp256k1::{rand, All, Message, Secp256k1, SecretKey},
     sighash::{EcdsaSighashType, SighashCache},
-    Address, Amount, Network, OutPoint, PublicKey, Script, ScriptBuf, Sequence, Transaction, TxIn,
-    TxOut, Txid, WPubkeyHash, Witness,
+    Address, Amount, Network, OutPoint, PublicKey, ScriptBuf, Sequence, Transaction, TxIn, TxOut,
+    Txid, WPubkeyHash, Witness,
 };
 
 fn main() {
@@ -224,7 +224,7 @@ mod check_consistency {
             previous_tx_value.checked_sub(fee).unwrap()
         );
 
-        assert!(previous_tx_out.script_pubkey.is_p2pkh());
-        assert!(current_tx_out.script_pubkey.is_p2pkh());
+        assert!(previous_tx_out.script_pubkey.is_p2sh());
+        assert!(current_tx_out.script_pubkey.is_p2sh());
     }
 }
