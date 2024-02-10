@@ -49,7 +49,7 @@ impl Miner {
         let mut current_block = Vec::<Transaction>::new();
         let mut skipped = Vec::<Transaction>::new();
 
-        while let Some(mut mempool_tx) = self.mempool.pop() {
+        while let Some(mempool_tx) = self.mempool.pop() {
             if current_block_weight + mempool_tx.weight > MAX_BLOCK_TX_WEIGHT
                 || self.mempool.is_empty()
             {
@@ -63,6 +63,7 @@ impl Miner {
 
                 while let Some(skipped_tx) = skipped.pop() {
                     self.mempool.push(skipped_tx);
+                    self.mempool.sort();
                 }
             }
 
@@ -72,10 +73,22 @@ impl Miner {
                 current_block_weight += mempool_tx.weight;
                 current_block.push(mempool_tx);
             } else {
-                let current_parent_txid =
-                    mempool_tx.parent_txids.pop().expect("Should have parent");
+                let mut all_parents_mined = Vec::<bool>::new();
 
-                if self.finalized_txids.contains(&current_parent_txid) {
+                for current_parent_txid in mempool_tx.parent_txids.iter() {
+                    let contains_tx = self.finalized_txids.contains(current_parent_txid);
+                    all_parents_mined.push(contains_tx);
+                }
+
+                let mut should_be_skipped = false;
+
+                all_parents_mined.iter().for_each(|element| {
+                    if !element {
+                        should_be_skipped = true;
+                    }
+                });
+
+                if !should_be_skipped {
                     current_block_weight += mempool_tx.weight;
                     current_block.push(mempool_tx);
                 } else {
