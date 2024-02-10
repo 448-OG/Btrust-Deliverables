@@ -1,74 +1,92 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashSet,
     fs::File,
     io::{prelude::*, BufReader},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 pub const MAX_BLOCK_TX_WEIGHT: u32 = 4_000_000;
 
 fn main() {
-    let mut mempool = Mempool::new("mempool.csv").load_mempool();
-    dbg!(&mempool.blocks.len());
-}
+    let mut miner = Miner::load_mempool("mempool.csv");
+    miner.mine();
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct Mempool {
-    txs: Vec<Transaction>,
-    uri: PathBuf,
-    blocks: Vec<Vec<Transaction>>,
-}
-
-impl Mempool {
-    pub fn new(uri: impl AsRef<Path>) -> Self {
-        Self {
-            uri: uri.as_ref().to_path_buf(),
-            ..Default::default()
+    for block in miner.finalized.iter() {
+        for tx in block {
+            println!("{}", &tx.txid);
         }
+        println!("\n\n",);
     }
+}
 
-    pub fn load_mempool(mut self) -> Self {
-        let file = File::open(&self.uri).unwrap();
+#[derive(Debug, PartialEq, Eq, Default)]
+pub struct Miner {
+    mempool: Vec<Transaction>,
+    finalized_txids: HashSet<String>,
+    finalized: Vec<Vec<Transaction>>,
+}
+
+impl Miner {
+    pub fn load_mempool(path_to_file: impl AsRef<Path>) -> Self {
+        let file = File::open(path_to_file.as_ref()).unwrap();
         let buffer = BufReader::new(file);
+        let mut init_miner = Miner::default();
 
-        let mut prepare_genesis = VecDeque::<Transaction>::new();
-
-        buffer.lines().into_iter().for_each(|line| {
+        buffer.lines().for_each(|line| {
             let line = line.unwrap();
-            let tx = Transaction::parser(&line.trim());
+            let tx = Transaction::parser(line.trim());
 
-            if tx.parent_txids.is_empty() {
-                prepare_genesis.push_back(tx);
-            } else {
-                self.txs.push(tx);
-            }
+            init_miner.mempool.push(tx);
         });
 
-        prepare_genesis.make_contiguous().sort();
+        init_miner.mempool.sort();
 
-        let mut weight_count = 0u32;
-        let mut block_buffer = Vec::<Transaction>::new();
+        init_miner
+    }
 
-        while let Some(tx) = prepare_genesis.pop_front() {
-            if tx.weight + weight_count > MAX_BLOCK_TX_WEIGHT {
-                weight_count = 0;
-                self.blocks.push(block_buffer.clone());
-                block_buffer.clear();
+    pub fn mine(&mut self) {
+        let mut current_block_weight = 0u32;
+        let mut current_block = Vec::<Transaction>::new();
+        let mut skipped = Vec::<Transaction>::new();
+
+        while let Some(mut mempool_tx) = self.mempool.pop() {
+            if current_block_weight + mempool_tx.weight > MAX_BLOCK_TX_WEIGHT
+                || self.mempool.is_empty()
+            {
+                for tx in current_block.iter() {
+                    self.finalized_txids.insert(tx.txid.clone());
+                }
+                self.finalized.push(current_block.clone());
+                current_block.clear();
+
+                current_block_weight = 0;
+
+                while let Some(skipped_tx) = skipped.pop() {
+                    self.mempool.push(skipped_tx);
+                }
             }
-            weight_count += tx.weight;
 
-            block_buffer.push(tx);
+            let has_no_parents = mempool_tx.parent_txids.is_empty();
+
+            if has_no_parents {
+                current_block_weight += mempool_tx.weight;
+                current_block.push(mempool_tx);
+            } else {
+                let current_parent_txid =
+                    mempool_tx.parent_txids.pop().expect("Should have parent");
+
+                if self.finalized_txids.contains(&current_parent_txid) {
+                    current_block_weight += mempool_tx.weight;
+                    current_block.push(mempool_tx);
+                } else {
+                    skipped.push(mempool_tx);
+                }
+            }
         }
-
-        self.blocks.push(block_buffer.clone());
-
-        block_buffer.clear();
-
-        self
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Default, Clone)]
+#[derive(Debug, PartialEq, Eq, Default, Clone, Hash)]
 pub struct Transaction {
     txid: String,
     fee: u64,
@@ -79,9 +97,9 @@ pub struct Transaction {
 impl Transaction {
     fn parser(value: &str) -> Self {
         let mut outcome = Self::default();
-        let tx_data = value.split(",").collect::<Vec<&str>>();
+        let tx_data = value.split(',').collect::<Vec<&str>>();
 
-        let txid = tx_data.get(0).unwrap().trim();
+        let txid = tx_data.first().unwrap().trim();
         let fee = tx_data.get(1).unwrap().trim();
         let weight = tx_data.get(2).unwrap().trim();
         let parents = tx_data.get(3);
@@ -91,12 +109,16 @@ impl Transaction {
         outcome.weight = weight.parse::<u32>().unwrap();
 
         if let Some(parent_exists) = parents {
-            parent_exists.trim().split(";").for_each(|parent| {
+            parent_exists.trim().split(';').for_each(|parent| {
                 if !parent.is_empty() {
                     outcome.parent_txids.push(parent.trim().to_owned());
                 }
             });
         }
+
+        // Reverse the parents order since ancestors of a transaction would need to be in
+        // the mempool for a UTXO to be valid
+        outcome.parent_txids.reverse();
 
         outcome
     }
@@ -104,10 +126,7 @@ impl Transaction {
 
 impl PartialOrd for Transaction {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        let self_fee_rate = self.fee / self.weight as u64;
-        let other_fee_rate = other.fee / other.weight as u64;
-
-        self_fee_rate.partial_cmp(&other_fee_rate)
+        Some(self.cmp(other))
     }
 }
 
@@ -116,6 +135,6 @@ impl Ord for Transaction {
         let self_fee_rate = self.fee / self.weight as u64;
         let other_fee_rate = other.fee / other.weight as u64;
 
-        self_fee_rate.cmp(&other_fee_rate)
+        other_fee_rate.cmp(&self_fee_rate)
     }
 }
