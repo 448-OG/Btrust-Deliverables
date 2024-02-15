@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-hex-literal.workspace = true
-hex.workspace = true
-ripemd.workspace = true
 sha2.workspace = true
+rand_core.workspace = true
+rand_chacha.workspace = true
+bitcoin.workspace = true
